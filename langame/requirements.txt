@@ -1,0 +1,8 @@
+Django==6.0
+gunicorn
+psycopg2-binary
+python-dotenv
+djangorestframework
+pytest
+pytest-django
+coverage
