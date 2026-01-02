@@ -62,3 +62,8 @@ jobs:
         working-directory: langame
         run: |
           python manage.py migrate --noinput
+
+      - name: Run tests
+        working-directory: langame
+        run: |
+          python manage.py test
