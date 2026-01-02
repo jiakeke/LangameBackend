@@ -26,14 +26,12 @@ jobs:
           --health-retries=10
 
     env:
-      # 你的 settings 强依赖这些 env，所以 CI 里必须提供
       DB_NAME: ci_db
       DB_USER: ci_user
       DB_PASSWORD: ci_pass
       DB_HOST: 127.0.0.1
       DB_PORT: "5432"
 
-      # 可选，但建议
       DJANGO_SETTINGS_MODULE: langame.settings
       PYTHONUNBUFFERED: "1"
 
