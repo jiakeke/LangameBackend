@@ -1,47 +1,132 @@
-name: Deploy
+name: CD (Docker -> AWS EC2)
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: cd-prod
+  cancel-in-progress: true
 
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: read
-      packages: write   # 推到 GHCR 必须
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_TAG: ${{ github.sha }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Set image tag
-        id: vars
+      - name: Set image name
         run: |
-          echo "tag=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          echo "IMAGE_NAME=${{ env.REGISTRY }}/${{ secrets.GIT_OWNER }}/${{ secrets.GIT_REPO }}" >> $GITHUB_ENV
 
-      - name: Login to GHCR
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push image to GHCR
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: ./Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:${{ steps.vars.outputs.tag }}
-            ghcr.io/${{ github.repository }}:latest
+            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Deploy via SSH
+      - name: Deploy to EC2 via SSH (compose + migrate + collectstatic + healthcheck + rollback)
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.PROD_HOST }}
-          username: ${{ secrets.PROD_USER }}
-          key: ${{ secrets.PROD_SSH_KEY }}
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_SSH_PORT || 22 }}
+          script_stop: true
           script: |
-            cd /opt/langame
-            ./deploy.sh ${{ steps.vars.outputs.tag }}
+            set -euo pipefail
+
+            DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
+            OWNER="${{ secrets.GIT_OWNER }}"
+            REPO="${{ secrets.GIT_REPO }}"
+            TAG="${{ env.IMAGE_TAG }}"
+            HEALTH_URL="${{ secrets.HEALTHCHECK_URL }}"
+
+            cd "$DEPLOY_PATH"
+
+            # Ensure docker compose is available
+            docker compose version
+
+            # Keep last good tag for rollback
+            LAST_TAG_FILE=".last_good_tag"
+            LAST_GOOD_TAG=""
+            if [ -f "$LAST_TAG_FILE" ]; then
+              LAST_GOOD_TAG="$(cat "$LAST_TAG_FILE" || true)"
+            fi
+
+            echo "Deploying tag: $TAG (last good: ${LAST_GOOD_TAG:-none})"
+
+            rollback() {
+              echo "=== DEPLOY FAILED: rolling back ==="
+              if [ -n "${LAST_GOOD_TAG:-}" ]; then
+                export GIT_OWNER="$OWNER"
+                export GIT_REPO="$REPO"
+                export IMAGE_TAG="$LAST_GOOD_TAG"
+                docker compose -f docker-compose.prod.yml pull
+                docker compose -f docker-compose.prod.yml up -d --remove-orphans
+                echo "Rolled back to $LAST_GOOD_TAG"
+              else
+                echo "No last good tag found. Rollback skipped."
+              fi
+            }
+
+            # Try deploy new tag
+            {
+              export GIT_OWNER="$OWNER"
+              export GIT_REPO="$REPO"
+              export IMAGE_TAG="$TAG"
+
+              docker compose -f docker-compose.prod.yml pull
+              docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+              # Run migrations & collectstatic
+              docker compose -f docker-compose.prod.yml exec -T web python manage.py migrate
+              docker compose -f docker-compose.prod.yml exec -T web python manage.py collectstatic --noinput
+
+              # Healthcheck (retry)
+              echo "Checking health: $HEALTH_URL"
+              for i in {1..20}; do
+                if curl -fsS "$HEALTH_URL" >/dev/null 2>&1; then
+                  echo "Healthcheck OK"
+                  break
+                fi
+                echo "Healthcheck not ready yet ($i/20), retrying..."
+                sleep 3
+              done
+
+              curl -fsS "$HEALTH_URL" >/dev/null 2>&1
+
+              # Mark as last good
+              echo "$TAG" > "$LAST_TAG_FILE"
+
+              echo "Deploy succeeded: $TAG"
+            } || {
+              rollback
+              exit 1
+            }

@@ -17,6 +17,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 ENTRYPOINT ["/entrypoint.sh"]
 
-#CMD ["gunicorn", "langame.wsgi:application", "--bind", "0.0.0.0:8000"]
+# 生产建议用 gunicorn（记得 requirements.txt 里有 gunicorn）
+CMD ["gunicorn", "langame.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--threads", "4", "--timeout", "60"]
