@@ -21,5 +21,4 @@ RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
 
-# 生产建议用 gunicorn（记得 requirements.txt 里有 gunicorn）
 CMD ["gunicorn", "langame.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--threads", "4", "--timeout", "60"]
