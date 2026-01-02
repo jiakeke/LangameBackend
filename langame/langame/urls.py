@@ -27,7 +27,7 @@ def healthz(_):
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("healthz", healthz),
+    path("healthz/", healthz),
     path("api/", include("vocab.urls")),
 ]
 

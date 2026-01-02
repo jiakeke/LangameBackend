@@ -66,7 +66,7 @@ jobs:
             OWNER="${{ secrets.GIT_OWNER }}"
             REPO="${{ secrets.GIT_REPO }}"
             TAG="${{ env.IMAGE_TAG }}"
-            HEALTH_URL="${{ secrets.HEALTHCHECK_URL }}"
+            HEALTH_URL="http://127.0.0.1/healthz/"
 
             cd "$DEPLOY_PATH"
             git fetch origin main
