@@ -108,8 +108,8 @@ jobs:
               docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
               # Run migrations & collectstatic
-              docker compose -f docker-compose.prod.yml exec -T web sh -lc "cd langame && python manage.py migrate"
-              docker compose -f docker-compose.prod.yml exec -T web sh -lc "cd langame && python manage.py collectstatic --noinput"
+              docker compose -f docker-compose.prod.yml exec -T web python manage.py migrate
+              docker compose -f docker-compose.prod.yml exec -T web python manage.py collectstatic --noinput
 
               # Healthcheck (retry)
               echo "Checking health: $HEALTH_URL"
