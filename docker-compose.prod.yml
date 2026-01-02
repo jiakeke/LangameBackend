@@ -1,6 +1,8 @@
 services:
   db:
     image: postgres:16
+    env_file:
+      - .env
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
@@ -12,7 +14,7 @@ services:
   web:
     image: ghcr.io/${GIT_OWNER}/${GIT_REPO}:${IMAGE_TAG}
     env_file:
-      - .env.prod
+      - .env
     depends_on:
       - db
     volumes:
