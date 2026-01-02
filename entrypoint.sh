@@ -2,7 +2,7 @@
 set -e
 
 # Waiting Postgres
-if [ -n "$DB_HOST" ]; then
+if [ -n "${DB_HOST:-}" ]; then
   echo "Waiting for PostgreSQL at $DB_HOST:$DB_PORT..."
   while ! nc -z "$DB_HOST" "$DB_PORT"; do
     sleep 1
